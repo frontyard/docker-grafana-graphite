@@ -1,61 +1,69 @@
 FROM        ubuntu:14.04
-MAINTAINER  kenwdelong
-# ---------------- #
-#   Installation   #
-# ---------------- #
+MAINTAINER  MariaLysik
 
-# Install all prerequisites
-RUN     apt-get update \     
-        && apt-get -y install software-properties-common \
-        && add-apt-repository -y ppa:chris-lea/node.js \
-        && apt-get -y update \
-        && apt-get -y install python-django-tagging python-simplejson python-memcache python-ldap python-cairo python-pysqlite2 python-support \
-            python-pip gunicorn supervisor nginx-light git wget curl openjdk-7-jre build-essential python-dev libffi-dev \
-        && apt-get autoclean \
-        && apt-get clean \
-        && apt-get autoremove
+# ------------- #
+#   Variables   #
+# ------------- #
 
+ENV DEBIAN_FRONTEND noninteractive
 ENV GRAPHITE_VERSION=1.0.2 \
     STATS_VERSION=v0.8.0 \
     TWISTED_VERSION=13.2.0 \
     GRAFANA_VERSION=4.4.3
 
+# ---------------- #
+#   Installation   #
+# ---------------- #
+
+# Install all prerequisites
+RUN     apt-get update \
+		&& apt-get -y install software-properties-common \
+		&& add-apt-repository -y ppa:chris-lea/node.js \
+		&& apt-get -y update \
+		&& apt-get -y install python-django-tagging python-simplejson python-memcache python-ldap python-cairo python-pysqlite2 python-support \
+			python-pip gunicorn supervisor nginx-light git wget curl openjdk-7-jre build-essential python-dev libffi-dev \
+		&& apt-get autoclean \
+		&& apt-get clean \
+		&& apt-get autoremove
+
 RUN     pip install Twisted==$TWISTED_VERSION \
         && pip install pytz
-        
+
 RUN	curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash - \
-    && apt-get install -y nodejs \
+	&& apt-get install -y nodejs \
 	&& npm install -g wizzy
 
 # Checkout the stable branches of Graphite, Carbon and Whisper and install from there
-# Install StatsD
+
 RUN     mkdir -p /src \
-        && git clone https://github.com/graphite-project/whisper.git /src/whisper \
-        && cd /src/whisper \
-        && git checkout $GRAPHITE_VERSION \
-        && python setup.py install
-        
+		&& git clone https://github.com/graphite-project/whisper.git /src/whisper \
+		&& cd /src/whisper \
+		&& git checkout $GRAPHITE_VERSION \
+		&& python setup.py install
+
 RUN     git clone https://github.com/graphite-project/carbon.git /src/carbon \
-        && cd /src/carbon \
-        && git checkout $GRAPHITE_VERSION \
-        && python setup.py install
-        
+		&& cd /src/carbon \
+		&& git checkout $GRAPHITE_VERSION \
+		&& python setup.py install
+
 RUN     git clone https://github.com/graphite-project/graphite-web.git /src/graphite-web \
-        && cd /src/graphite-web \
-        && git checkout $GRAPHITE_VERSION \
-        && python setup.py install \
-        && pip install -r requirements.txt \
-        && python check-dependencies.py
-        
+		&& cd /src/graphite-web \
+		&& git checkout $GRAPHITE_VERSION \
+		&& python setup.py install \
+		&& pip install -r requirements.txt \
+		&& python check-dependencies.py
+
+# Install StatsD
 RUN     git clone https://github.com/etsy/statsd.git /src/statsd \
-        && cd /src/statsd \
-        && git checkout $STATSD_VERSION
-        
+		&& cd /src/statsd \
+		&& git checkout $STATSD_VERSION
+
+# Install Grafana
 RUN     mkdir /src/grafana \
-        && mkdir /opt/grafana \
-        && wget https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana-${GRAFANA_VERSION}.linux-x64.tar.gz -O /src/grafana.tar.gz \
-        && tar -xzf /src/grafana.tar.gz -C /opt/grafana --strip-components=1 \
-        && rm /src/grafana.tar.gz
+		&& mkdir /opt/grafana \
+		&& wget https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana-${GRAFANA_VERSION}.linux-x64.tar.gz -O /src/grafana.tar.gz \
+		&& tar -xzf /src/grafana.tar.gz -C /opt/grafana --strip-components=1 \
+		&& rm /src/grafana.tar.gz
 
 # ----------------- #
 #   Configuration   #
@@ -72,27 +80,27 @@ ADD     ./graphite/storage-schemas.conf /opt/graphite/conf/storage-schemas.conf
 ADD     ./graphite/storage-aggregation.conf /opt/graphite/conf/storage-aggregation.conf
 
 RUN     mkdir -p /opt/graphite/storage/whisper \
-        && touch /opt/graphite/storage/graphite.db /opt/graphite/storage/index \
-        && chown -R www-data /opt/graphite/storage \
-        && chmod 0775 /opt/graphite/storage /opt/graphite/storage/whisper \
-        && chmod 0664 /opt/graphite/storage/graphite.db \
-        && cp /src/graphite-web/webapp/manage.py /opt/graphite/webapp \
-        && cd /opt/graphite/webapp/ \
-        && python manage.py migrate --run-syncdb --noinput
+		&& touch /opt/graphite/storage/graphite.db /opt/graphite/storage/index \
+		&& chown -R www-data /opt/graphite/storage \
+		&& chmod 0775 /opt/graphite/storage /opt/graphite/storage/whisper \
+		&& chmod 0664 /opt/graphite/storage/graphite.db \
+		&& cp /src/graphite-web/webapp/manage.py /opt/graphite/webapp \
+		&& cd /opt/graphite/webapp/ \
+		&& python manage.py migrate --run-syncdb --noinput
 
 # Configure Grafana
 ADD     ./grafana/custom.ini /opt/grafana/conf/custom.ini
 
 RUN	cd /src \
-    && wizzy init \
+	&& wizzy init \
 	&& extract() { cat /opt/grafana/conf/custom.ini | grep $1 | awk '{print $NF}'; } \
 	&& wizzy set grafana url $(extract ";protocol")://$(extract ";domain"):$(extract ";http_port")	\		
 	&& wizzy set grafana username $(extract ";admin_user")	\
 	&& wizzy set grafana password $(extract ";admin_password")
-	
+
 # Add the default dashboards
 RUN 	mkdir /src/datasources \
-        && mkdir /src/dashboards
+		&& mkdir /src/dashboards
 ADD	    ./grafana/datasources/* /src/datasources
 ADD     ./grafana/dashboards/* /src/dashboards/
 ADD     ./grafana/export-datasources-and-dashboards.sh /src/
@@ -105,11 +113,16 @@ ADD     ./supervisord/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 #   Expose Ports   #
 # ---------------- #
 
-# Grafana: 80
-# StatsD UDP port: 8125
-# StatsD Management port: 8126
+# Grafana
 EXPOSE  80
+
+# Graphite
+EXPOSE 2003
+
+# StatsD UDP port
 EXPOSE  8125/udp
+
+# StatsD Management port
 EXPOSE  8126
 
 # Elasticsearch data storage path: /var/lib/elasticsearch

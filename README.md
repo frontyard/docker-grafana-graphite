@@ -1,57 +1,107 @@
-StatsD + Graphite + Grafana
----------------------------
+StatsD 0.8.0 + Graphite 1.0.2 + Grafana 4.5.1
+---------------------------------------------
 
-This image contains a sensible default configuration of StatsD, Graphite and Grafana. There are two ways
-for using this image:
+This image contains a sensible default configuration of StatsD, Graphite and Grafana. It is based on [Ken DeLong's repository on the Docker Index](https://index.docker.io/u/kenwdelong/) and published under [Maria Łysik's repository](https://hub.docker.com/u/marial/).
 
-
-### Using the Docker Index ###
-
-This image is based on [Kamon's repository on the Docker Index](https://index.docker.io/u/kamon/) and published under [Ken DeLong's repository]
-(https://index.docker.io/u/kenwdelong/). All you need as a prerequisite is having Docker installed on your machine. 
 The container exposes the following ports:
-
 - `80`: the Grafana web interface.
+- `2003`: the Carbon port.
 - `8125`: the StatsD port.
 - `8126`: the StatsD administrative port.
-
-To start a container with this image you just need to run the following command:
-
-```bash
-docker run -d -p 80:80 -p 8125:8125/udp -p 8126:8126 --name grafana kenwdelong/grafana_graphite:latest
-```
-
 If you already have services running on your host that are using any of these ports, you may wish to map the container
 ports to whatever you want by changing left side number in the `-p` parameters. Find more details about mapping ports
 in the [Docker documentation](http://docs.docker.io/use/port_redirection/#port-redirection).
+
+There are three ways for using this image:
+
+### Building the image yourself ###
+The Dockerfile and supporting configuration files are available in [Github repository](https://github.com/MariaLysik/docker-grafana-graphite).
+This comes specially handy if you want to change any of the StatsD, Graphite or Grafana settings, or simply if you want to know how the image was built.
+
+### Using the Docker Index ###
+```bash
+docker run -d -p 80:80 -p 8125:8125/udp -p 8126:8126 --name grafana marial/grafana-graphite-statsd
+```
+
+### Using Kubernetes ###
+```bash
+kubectl create -f graphite.yml
+```
+graphite.yml
+```bash
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: graphite
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: graphite
+    spec:
+      containers:
+      - name: graphite
+        image: marial/grafana-graphite-statsd
+        ports:
+        - containerPort: 80
+          name: grafaa
+        - containerPort: 2003
+          name: carbon
+        - containerPort: 8125
+          name: udp
+        - containerPort: 8126
+          name: statsd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphite-tcp
+spec:
+  type: LoadBalancer
+  ports:
+  - name: grafana
+    protocol: TCP
+    port: 80
+    targetPort: 80
+  - name: carbon
+    protocol: TCP
+    port: 2003
+    targetPort: 2003
+  - name: statsdadmin
+    protocol: TCP
+    port: 8126
+    targetPort: 8126
+  selector:
+    app: graphite
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphite-udp
+spec:
+  type: LoadBalancer
+  ports:
+  - name: statsd
+    protocol: UDP
+    port: 8125
+    targetPort: 8125
+  selector:
+    app: graphite
+```
 
 #### Testing ####
 Run the test script in the test-grafana directory.  Then go to port 80 on the container, log in as admin/admin, and create a chart that looks at `stats/counters/example/statsd/counter/changed/count`.  You should see the graph working there.
 
 #### External Volumes ####
 External volumes can be used to customize graphite configuration and store data out of the container.
-
 - Graphite configuration: `/opt/graphite/conf`
 - Graphite data: `/opt/graphite/storage/whisper`
 - Supervisord log: `/var/log/supervisor`
 
-### Building the image yourself ###
-
-The Dockerfile and supporting configuration files are available in our [Github repository](https://github.com/kenwdelong/docker-grafana-graphite).
-This comes specially handy if you want to change any of the StatsD, Graphite or Grafana settings, or simply if you want
-to know how the image was built.
-
-
 ### Using the Dashboard ###
-
 Once your container is running all you need to do is:
 - open your browser pointing to the host/port you just published
 - login with the default username (admin) and password (admin)
 - configure a new datasource to point at the Graphite metric data (URL - http://localhost:8000) and replace the default Grafana test datasource for your graphs
 - open your browser pointing to the host/port you just published and play with the dashboard at your wish...
-
-We hope that you have a lot of fun with this image and that it serves it's
-purpose of making your life easier. This should give you an idea of how the dashboard looks like when receiving data
-from one of our toy applications:
-
-![Kamon Dashboard](http://kamon.io/assets/img/kamon-statsd-grafana.png)
