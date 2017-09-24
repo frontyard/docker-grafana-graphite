@@ -24,7 +24,22 @@ docker run -d -p 80:80 -p 8125:8125/udp -p 8126:8126 --name grafana marial/grafa
 ```
 
 ### Using Kubernetes ###
+`ATTENTION: this example uses already created Azure file share as permanent storage for graphite data. If you do not wish to use any volumes, just skip secret creation and volume parts in graphite.yml.`
+First create secret to Azure storage with file volumes, but keep in mind that both name and key have to be base64 encoded (you can use  `echo -n <my-storage-account> | base64` for it).
+azure-secret.yml
 ```bash
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-secret
+type: Opaque
+data:
+  azurestorageaccountname: base64encodedAccountName=
+  azurestorageaccountkey: base64encodedAccountKey==
+```
+And then...
+```bash
+kubectl create -f azure-secret.yml
 kubectl create -f graphite.yml
 ```
 graphite.yml
@@ -52,6 +67,15 @@ spec:
           name: udp
         - containerPort: 8126
           name: statsd
+        volumeMounts:
+        - name: graphite-whisper
+          mountPath: /opt/graphite/storage/whisper
+      volumes:
+        - name: graphite-whisper
+          azureFile:
+            secretName: azure-secret
+            shareName: graphitewhisper
+            readOnly: false
 ---
 apiVersion: v1
 kind: Service
